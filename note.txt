@@ -1,0 +1,15 @@
+- get account balance
+- get tournaments list
+- switch from demo to real account
+- get specific account balance
+- reset demo account balance
+
+- get historical candles
+- get real-time candles
+
+- place digital option trade
+- check digital option trade result
+- get_digital_underlying_list_data
+
+- place binary trade
+- check binary option trade result
