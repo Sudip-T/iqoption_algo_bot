@@ -1,0 +1,11 @@
+create virtual environment
+- python -m venv env_name(like env)
+
+activate virtual environment
+- source env/scripts/activate
+
+get dependencies package names
+- pip freeze > requirements.txt
+
+install dependencies
+- pip install -r requirements.txt

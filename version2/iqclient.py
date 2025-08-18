@@ -41,6 +41,10 @@ class IQOptionAlgoAPI:
             print("Email and password are required!")
             sys.exit()
 
+        if self._connected:
+            logger.warning('Already connected to iqoption')
+            return
+
         try:
             response = self.session.post(url=LOGIN_URL, 
                 data={'identifier': self.email,'password': self.password})
