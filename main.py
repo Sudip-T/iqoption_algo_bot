@@ -1,18 +1,15 @@
 import time
+import json
+import logging
+from datetime import datetime
 from version2.iqclient import IQOptionAlgoAPI
+
+logger = logging.getLogger(__name__)
 
 
 try:
     algobot = IQOptionAlgoAPI()
     algobot._connect()
 
-    algobot.save_underlying_assests_to_file()
-
-    # # time.sleep(1)
-    candles = algobot.market_manager.get_candle_history('EURUSD-OTC')
-    algobot.market_manager.plot_candles(candles)
-
-
-    # algobot.switch_account('demo')
 except Exception as e:
-    print(e)
+    logger.error(e)

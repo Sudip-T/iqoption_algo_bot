@@ -38,14 +38,16 @@ class WebSocketManager:
             msg=msg,
             request_id=request_id
         ))
+        
         self.websocket.send(data)
+        return request_id
     
     def _on_message(self, ws, message):
-        # print(message)
+        print(message, '\n')
         try:
             message = json.loads(message)
-            self.ws_is_active = True
             self.message_handler.handle_message(message)
+            self.ws_is_active = True
         except json.JSONDecodeError as e:
             print(f"Error parsing message: {e}")
     

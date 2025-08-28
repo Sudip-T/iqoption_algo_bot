@@ -1,5 +1,7 @@
 import json
 import logging
+import threading
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +16,11 @@ class MessageHandler:
         self.underlying_list = None
         self.initialization_data = None
         self._underlying_assests = None
+        self.hisory_positions = None
+        self.open_positions = {
+            'digital_options':{},
+            'binary_options':{}
+        }
         
     def handle_message(self, message):
         message_name = message.get('name')
@@ -22,10 +29,11 @@ class MessageHandler:
             'profile': self._handle_profile,
             'candles': self._handle_candles,
             'balances': self._handle_balances,
-            'server_time': self._handle_server_time,
+            'timeSync': self._handle_server_time,
             'underlying-list': self._handle_underlying_list,
             'initialization-data': self._handle_initialization_data,
             'training-balance-reset': self._handle_training_balance_reset,
+            "history-positions":self._handle_position_history,
         }
         
         handler = handlers.get(message_name)
@@ -69,3 +77,21 @@ class MessageHandler:
     def _save_data(self, message, filename):
         with open(f'{filename}.json', 'w') as file:
             json.dump(message, file, indent=4)
+
+
+
+
+    # def _handle_candles_generated(self, message):
+    #     with self.tick_lock:
+    #         # Store the raw tick data
+    #         self.latest_tick = message.get('msg', {})
+    #         # Add current timestamp if not present
+    #         if 'at' not in self.latest_tick:
+    #             self.latest_tick['at'] = int(time.time() * 1e9)
+
+    def get_latest_tick(self):
+        with self.tick_lock:
+            return self.latest_tick
+        
+    def _handle_position_history(self, message):
+        self.hisory_positions = message['msg']['positions']

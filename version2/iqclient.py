@@ -7,6 +7,7 @@ from version2.wsmanager.iqwebsocket import WebSocketManager
 from version2.wsmanager.message_handler import MessageHandler
 from version2.accounts import AccountManager
 from version2.markets import MarketManager
+from typing import Optional, List
 
 
 # Setup logging
@@ -32,10 +33,10 @@ class IQOptionAlgoAPI:
         )
         self.account_manager = AccountManager(self.websocket, self.message_handler)
         self.market_manager = MarketManager(self.websocket, self.message_handler)
+
         logger.info('ALGO BOT initialized successfully')
 
-
-    def c2as_login(self):
+    def _login(self):
         """Login and establish websocket connection"""
         if not all([ self.email, self.password]):
             print("Email and password are required!")
@@ -57,7 +58,7 @@ class IQOptionAlgoAPI:
             logger.warning(e)
 
     
-    def c2as_logout(self, data=None):
+    def _logout(self, data=None):
         if self.session.post(url=LOGOUT_URL, data=data).status_code == 200:
             self._connected = False
             logger.info(f'Logged out Successfully')
@@ -67,7 +68,7 @@ class IQOptionAlgoAPI:
     
     def _connect(self):
         """Login and establish websocket connection"""
-        if self.c2as_login():
+        if self._login():
             self.websocket.start_websocket()
 
             # websocket authentication by passing SSID
@@ -95,9 +96,9 @@ class IQOptionAlgoAPI:
     
     def switch_account(self, account_type:str):
         self._ensure_connected()
-        if account_type == self.account_manager.active_account_type:
-            logger.warning(f'Already switched to {account_type}!')
-            return
+        if account_type.lower() == self.account_manager.current_account_type:
+            logger.warning(f'Already on {account_type.lower()} account. No switch needed.')
+            return False  # or True, depending on how you want to handle this
         return self.account_manager.switch_account(account_type)
     
     def get_candle_history(self, asset_name='EURUSD-op', count=50, timeframe=60):
@@ -114,3 +115,15 @@ class IQOptionAlgoAPI:
         """Ensure bot is connected."""
         if not self._connected:
             raise Exception("Bot is not connected. Call connect() first.")
+        
+    def get_position_history_by_time(self, instrument_type: List[str],
+                                    start_time: Optional[str] = None,
+                                    end_time: Optional[str] = None):
+        self._ensure_connected()
+        return self.account_manager.get_position_history_by_time(instrument_type, start_time=start_time, end_time=end_time)
+    
+    def get_position_history_by_page(self, instrument_type: List[str],
+                                    limit: int = 300,
+                                    offset: int = 0):
+        self._ensure_connected()
+        return self.account_manager.get_position_history_by_page(instrument_type, limit=limit, offset=offset)
