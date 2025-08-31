@@ -9,6 +9,7 @@ from version2.accounts import AccountManager
 from version2.markets import MarketManager
 from typing import Optional, List
 
+from version2.trade import TradeManager
 
 # Setup logging
 logging.basicConfig(
@@ -33,7 +34,7 @@ class IQOptionAlgoAPI:
         )
         self.account_manager = AccountManager(self.websocket, self.message_handler)
         self.market_manager = MarketManager(self.websocket, self.message_handler)
-
+        self.trade_manager = TradeManager(self.websocket, self.message_handler, self.account_manager)
         logger.info('ALGO BOT initialized successfully')
 
     def _login(self):
@@ -127,3 +128,8 @@ class IQOptionAlgoAPI:
                                     offset: int = 0):
         self._ensure_connected()
         return self.account_manager.get_position_history_by_page(instrument_type, limit=limit, offset=offset)
+    
+    def execute_digital_option_trade(self,asset: str,amount: int,direction: str,
+                                    expiry: Optional[int] = 1):
+        self._ensure_connected()
+        return self.trade_manager._execute_digital_option_trade(asset, amount, direction, expiry=expiry)

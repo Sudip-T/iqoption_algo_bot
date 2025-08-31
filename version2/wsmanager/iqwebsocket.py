@@ -43,7 +43,7 @@ class WebSocketManager:
         return request_id
     
     def _on_message(self, ws, message):
-        print(message, '\n')
+        # print(message, '\n')
         try:
             message = json.loads(message)
             self.message_handler.handle_message(message)

@@ -34,6 +34,7 @@ class MessageHandler:
             'initialization-data': self._handle_initialization_data,
             'training-balance-reset': self._handle_training_balance_reset,
             "history-positions":self._handle_position_history,
+            "digital-option-placed":self._handle_digital_option_placed,
         }
         
         handler = handlers.get(message_name)
@@ -95,3 +96,9 @@ class MessageHandler:
         
     def _handle_position_history(self, message):
         self.hisory_positions = message['msg']['positions']
+
+    def _handle_digital_option_placed(self, message):
+        if message["msg"].get("id") != None:
+            self.open_positions['digital_options'][message["request_id"]] = message["msg"].get("id")
+        else:
+            self.open_positions['digital_options'][message["request_id"]] = message["msg"].get("message")

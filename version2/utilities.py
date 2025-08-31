@@ -31,7 +31,6 @@ def get_expiration(timestamp:int, expiry:int=1):
 
     # Round down to nearest minute (remove seconds and microseconds)
     now_date_hm = now_date.replace(second=0, microsecond=0)
-
     # Calculate expiration based on conditions
     if expiry == 1:
         if (now_date_hm + timedelta(minutes=1)).timestamp() - timestamp >= min_time_needed:
