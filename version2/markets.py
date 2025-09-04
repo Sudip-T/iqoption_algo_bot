@@ -1,22 +1,15 @@
 import time
 import pandas as pd
 import mplfinance as mpf
-# from underlying_list import underlying_list
-from typing import Optional, Dict, Any, List
 from enum import Enum
 import logging
 from options_assests import UNDERLYING_ASSESTS
 
-
 logger = logging.getLogger(__name__)
 
 
-from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
-import numpy as np
-import threading
-
 class InstrumentType(Enum):
+    """Trading instrument types supported by IQOption API."""
     FOREX = 'forex'
     CFD = 'cfd'
     CRYPTO = 'crypto'
@@ -24,25 +17,29 @@ class InstrumentType(Enum):
     BINARY_OPTION = 'binary-option'
 
 class MarketManager:
+    """
+    Manages IQOption market data operations including candle history, asset management etc.
+    
+    Handles historical/real-time candle data, live chart plotting with threading,
+    asset ID lookups, and WebSocket message processing.
+    """
     def __init__(self, websocket_manager, message_handler):
         self.ws_manager = websocket_manager
         self.message_handler = message_handler
-
-
-        self.live_plot_active = False
-        self.plot_thread = None
-        self.plot_timeout = None
-        self.current_timeframe = None
-        self.tick_data = pd.DataFrame(columns=['Price', 'Volume'])
-        self.tick_data.index = pd.DatetimeIndex([])
-        self.candles = pd.DataFrame(columns=['Open', 'High', 'Low', 'Close', 'Volume'])
-        self.candles.index = pd.DatetimeIndex([])
-        self.last_candle_time = None
-        self.lock = threading.Lock()
-        self.fig = None
-        self.axes = None
     
     def get_asset_id(self, asset_name: str) -> int:
+        """
+        Get numeric asset ID for trading asset name.
+        
+        Args:
+            asset_name: Trading asset name (e.g., 'EURUSD-op', 'EURUSD-OTC')
+            
+        Returns:
+            Asset ID for API calls
+            
+        Raises:
+            KeyError: If asset not found
+        """
         if asset_name in UNDERLYING_ASSESTS:
             return UNDERLYING_ASSESTS[asset_name]
         raise KeyError(f'{asset_name} not found!')
@@ -57,6 +54,7 @@ class MarketManager:
             timeframe: Timeframe of each candle in seconds
         """
 
+        # Reset state and prepare request
         self.message_handler.candles = None
         
         name = "sendMessage"
@@ -75,12 +73,19 @@ class MarketManager:
         
         self.ws_manager.send_message(name, msg)
         
+        # Wait for response
         while self.message_handler.candles is None:
             time.sleep(0.1)
         
         return self.message_handler.candles
     
     def plot_candles(self, candles_data=None):
+        """
+        Display candlestick chart using mplfinance.
+        
+        Args:
+            candles_data: Candle data list (uses cached data if None)
+        """
         if candles_data is None:
             candles_data = self.message_handler.candles
         
@@ -88,6 +93,7 @@ class MarketManager:
             print("No candle data available")
             return
         
+        # Convert and format data
         df = pd.DataFrame(candles_data)
         df = df.rename(columns={
             'open': 'Open',
@@ -100,6 +106,7 @@ class MarketManager:
         df['timestamp'] = pd.to_datetime(df['from'], unit='s')
         df = df.set_index('timestamp')
         
+        # Create candlestick chart
         mpf.plot(
             df,
             type='candle',
@@ -110,6 +117,13 @@ class MarketManager:
         )
     
     def save_candles_to_csv(self, candles_data=None, filename: str = 'candles'):
+        """
+        Export candle data to CSV file.
+        
+        Args:
+            candles_data: Data to save (uses cached if None)
+            filename: Output filename without extension
+        """
         if candles_data is None:
             candles_data = self.message_handler.candles
         
@@ -117,6 +131,7 @@ class MarketManager:
             print("No candle data to save")
             return
         
+        # Format data and export
         df = pd.DataFrame(candles_data)
         df = df.rename(columns={'max': 'high','min': 'low'})
 
@@ -126,6 +141,24 @@ class MarketManager:
         df.to_csv(f'{filename}.csv', index=False)
 
     def _build_msg_body(self, instrument_type:str):
+        """
+        Construct WebSocket message body for different instrument types.
+        
+        This private method creates the appropriate message structure based on
+        the instrument type, as each type requires different API endpoints and parameters.
+        
+        Args:
+            instrument_type (str): Type of instrument ('digital-option', 'binary-option',
+                'forex', 'cfd', or 'crypto')
+                
+        Returns:
+            dict: Formatted message body for WebSocket transmission
+            
+        Note:
+            - Digital options use v3.0 API with suspension filtering
+            - Binary options use v4.0 initialization data endpoint
+            - Marginal instruments (forex/cfd/crypto) use v1.0 specific endpoints
+        """
         if instrument_type == 'digital-option':
             msg = {
                 "name": "digital-option-instruments.get-underlying-list",
@@ -150,17 +183,36 @@ class MarketManager:
         return msg
     
     def get_underlying_assests(self, instrument_type:str):
-        # Validate instrument_type ['forex'/'cfd'/'crypto'/'digital-option'/'binary-option']
+        """
+        Retrieve list of available underlying assets for a specific instrument type.
+        
+        Validates the instrument type, sends an API request, and waits
+        for the response containing available trading instruments.
+        
+        Args:
+            instrument_type (str): Type of instrument to query. Must be one of:
+                'forex', 'cfd', 'crypto', 'digital-option', 'binary-option'
+                
+        Returns:
+            list: List of underlying asset dictionaries containing asset information
+            
+        Raises:
+            ValueError: If instrument_type is not supported
+    
+        """
+
+        # Validate instrument type against enum values
         valid_types = {instrument.value for instrument in InstrumentType}
         if instrument_type not in valid_types:
             raise ValueError(f"Unsupported instrument type: {instrument_type}. "
                            f"Must be one of: {', '.join(valid_types)}")
 
-        # reset state
+        # Reset state to ensure fresh data
         self.message_handler._underlying_assests = None
 
         self.ws_manager.send_message('sendMessage', self._build_msg_body(instrument_type))
 
+        # Wait for response (blocking operation)
         while self.message_handler._underlying_assests == None:
             time.sleep(.1)
 
@@ -168,18 +220,42 @@ class MarketManager:
 
 
     def save_underlying_assests_to_file(self):
+        """        
+        Retrieves assets from multiple instrument types, filters out
+        suspended instruments, and generates two separate Python files containing
+        asset dictionaries for easy import and use.
+        
+        Generated files:
+            - options_assests.py: Contains digital and binary options assets
+            - marginal_assests.py: Contains forex, CFD, and crypto assets
+            
+        Returns:
+            None: Creates Python files in the current directory
+            
+        Note:
+            - Only active (non-suspended) assets are included
+            - Assets are sorted by ID for consistent ordering
+            - Files are auto-generated with proper Python dictionary format
+        """
+
+        # Initialize storage dictionaries
         options_underlying_assets = {}
         marginal_underlying_assets = {}
 
+        # Get underlying assets for marginal trading instruments (forex, CFD, crypto)
         for instrument in ['forex', 'cfd', 'crypto']:
             underlying_list = self.get_underlying_assests(instrument)
             for item in underlying_list:
                 if item['is_suspended'] == False:
                     marginal_underlying_assets[item['name']] = item['active_id']
 
+        # Get underlying assets for digital options
         digital_underlying = self.get_underlying_assests('digital-option')
+
+        # Get underlying assets for binary options
         initialization_data = self.get_underlying_assests('binary-option')
 
+        # Filters out suspended asset and add to options_underlying_assets
         for assest in digital_underlying:
             if assest['is_suspended'] == False:
                 options_underlying_assets[assest['name']] = assest['active_id']
@@ -191,11 +267,27 @@ class MarketManager:
                     if value['is_suspended'] == False:
                         options_underlying_assets[value['ticker']] = value['id']
 
+        # Export to separate files for different trading types
         self._export_assets_to_fiel(options_underlying_assets, 'options_assests.py')
         self._export_assets_to_fiel(marginal_underlying_assets, 'marginal_assests.py')
 
     def _export_assets_to_fiel(self, data:dict, file:str) -> None:
+        """        
+        Creates a Python file containing a dictionary of assets
+        sorted by ID, with proper formatting for easy import and readability.
+        
+        Args:
+            data (dict): Dictionary mapping asset names to IDs
+            file (str): Output filename including extension
+            
+        Returns:
+            None: Creates a formatted Python file
+        """
+
+        # Sort assets by ID for consistent file output
         data = dict(sorted(data.items(), key=lambda item:item[-1]))
+
+        # Write formatted Python file
         with open(f'{file}', 'w') as file:
             file.write('#Auto-Generated Underlying List\n')
             file.write('UNDERLYING_ASSESTS = {\n')
@@ -203,35 +295,17 @@ class MarketManager:
                 file.write(f"   '{key}':{value},\n")
             file.write('}\n')
 
-    # def subscribe_candles(self, asset_name:str, timeframe:int=60) -> None:
-    #     """Subscribe to candle data for an asset"""
-    #     # Subscribe to real-time candles
-    #     self.ws_manager.send_message('subscribeMessage', {
-    #         'name': 'candle-generated',
-    #         'params': {
-    #             'routingFilters': {
-    #                 'active_id': self.get_asset_id(asset_name),
-    #                 'size': timeframe
-    #             }
-    #         }
-    #     })
-
-
     def subscribe_candles(self, asset_name: str, timeframe: int = 60, plot_timeout: int = None):
-        """Subscribe to candle data and start live plotting with proper timeframe aggregation"""
-        # Stop any existing plot
-        self.stop_live_plot()
+        """
+        Subscribe to real-time candle data with live plotting capability.
         
-        # Reset data structures
-        with self.lock:
-            self.tick_data = pd.DataFrame(columns=['Price', 'Volume'])
-            self.tick_data.index = pd.DatetimeIndex([])
-            self.candles = pd.DataFrame(columns=['Open', 'High', 'Low', 'Close', 'Volume'])
-            self.candles.index = pd.DatetimeIndex([])
-            self.last_candle_time = None
-            self.current_timeframe = timeframe
+        Args:
+            asset_name (str): Name of the asset to subscribe to (e.g., 'EURUSD')
+            timeframe (int, optional): Candle timeframe in seconds. Defaults to 60.
+                Common values: 60 (1min), 300 (5min), 900 (15min), 3600 (1hr)
+        """
         
-        # Subscribe to candle data
+        # Subscribe to real-time candle data via WebSocket
         self.ws_manager.send_message('subscribeMessage', {
             'name': 'candle-generated',
             'params': {
@@ -241,165 +315,3 @@ class MarketManager:
                 }
             }
         })
-        
-        # # Set up live plotting
-        # self.live_plot_active = True
-        # self.plot_timeout = plot_timeout
-        # self.plot_thread = threading.Thread(target=self._run_live_plot)
-        # self.plot_thread.daemon = True
-        # self.plot_thread.start()
-    
-    def stop_live_plot(self):
-        """Stop the live plotting"""
-        self.live_plot_active = False
-        if self.plot_thread and self.plot_thread.is_alive():
-            self.plot_thread.join()
-        if self.fig:
-            plt.close(self.fig)
-    
-    def _process_tick(self, tick):
-        """Process incoming tick data and aggregate into timeframe candles"""
-        if not tick or 'ask' not in tick or 'bid' not in tick:
-            return
-            
-        try:
-            # Convert timestamp to pandas Timestamp for floor operation
-            timestamp = pd.to_datetime(tick['at'], unit='ns')
-            price = (tick['ask'] + tick['bid']) / 2  # Mid price
-            volume = tick.get('volume', 0)
-            
-            with self.lock:
-                # Add tick to DataFrame
-                new_tick = pd.DataFrame([{
-                    'Price': price,
-                    'Volume': volume
-                }], index=[timestamp])
-                self.tick_data = pd.concat([self.tick_data, new_tick])
-                
-                # Determine current candle time using pandas floor
-                candle_time = timestamp.floor(f'{self.current_timeframe}s')
-                
-                # If new candle period starts
-                if self.last_candle_time is None or candle_time > self.last_candle_time:
-                    # Finalize previous candle if exists
-                    if self.last_candle_time is not None:
-                        period_ticks = self.tick_data.loc[self.last_candle_time:candle_time - timedelta(microseconds=1)]
-                        if not period_ticks.empty:
-                            new_candle = pd.DataFrame([{
-                                'Open': period_ticks['Price'].iloc[0],
-                                'High': period_ticks['Price'].max(),
-                                'Low': period_ticks['Price'].min(),
-                                'Close': period_ticks['Price'].iloc[-1],
-                                'Volume': period_ticks['Volume'].sum()
-                            }], index=[self.last_candle_time])
-                            self.candles = pd.concat([self.candles, new_candle])
-                    
-                    # Start new candle
-                    self.last_candle_time = candle_time
-                    
-                    # Keep only ticks from current candle period for memory efficiency
-                    self.tick_data = self.tick_data.loc[self.last_candle_time:]
-        except Exception as e:
-            print(f"Error processing tick: {e}")
-    
-    def _run_live_plot(self):
-        """Background thread for live plotting"""
-        start_time = time.time()
-        
-        # Wait for some initial data before creating the plot
-        while self.live_plot_active and self.candles.empty:
-            tick = self.message_handler.get_latest_tick()
-            if tick:
-                self._process_tick(tick)
-            time.sleep(0.1)
-        
-        if not self.live_plot_active:
-            return
-        
-        # Create initial dummy data with proper DatetimeIndex for the plot
-        current_time = datetime.now()
-        dummy_data = pd.DataFrame({
-            'Open': [1.0],
-            'High': [1.0],
-            'Low': [1.0], 
-            'Close': [1.0],
-            'Volume': [0]
-        }, index=pd.DatetimeIndex([current_time]))
-        
-        try:
-            # Create figure with dummy data
-            self.fig, self.axes = mpf.plot(
-                dummy_data,
-                type='candle',
-                volume=True,
-                returnfig=True,
-                style='charles',
-                figratio=(12, 8),
-                figscale=1.0
-            )
-            plt.ion()
-            plt.show()
-            
-            while self.live_plot_active:
-                # Check timeout
-                if self.plot_timeout and (time.time() - start_time) > self.plot_timeout:
-                    self.live_plot_active = False
-                    break
-                
-                # Get latest tick from message handler
-                tick = self.message_handler.get_latest_tick()
-                if tick:
-                    self._process_tick(tick)
-                    
-                    # Update plot if we have candles
-                    with self.lock:
-                        if not self.candles.empty:
-                            for ax in self.axes:
-                                ax.clear()
-                            
-                            # Plot complete candles
-                            mpf.plot(
-                                self.candles,
-                                type='candle',
-                                ax=self.axes[0],
-                                volume=self.axes[1],
-                                style='charles',
-                                datetime_format='%H:%M',
-                                axtitle=f'Live {self.current_timeframe}s Candles (Last: {self.candles["Close"].iloc[-1]:.5f})',
-                                update_width_config=dict(
-                                    candle_linewidth=1.0,
-                                    candle_width=0.8
-                                )
-                            )
-                            
-                            # If we have partial candle data, plot it differently
-                            if not self.tick_data.empty and self.last_candle_time is not None:
-                                current_open = self.tick_data['Price'].iloc[0]
-                                current_high = self.tick_data['Price'].max()
-                                current_low = self.tick_data['Price'].min()
-                                current_close = self.tick_data['Price'].iloc[-1]
-                                current_volume = self.tick_data['Volume'].sum()
-                                
-                                # Draw partial candle
-                                self.axes[0].plot([self.last_candle_time], [current_open], 'bo')
-                                self.axes[0].vlines(
-                                    x=self.last_candle_time,
-                                    ymin=current_low,
-                                    ymax=current_high,
-                                    colors='b',
-                                    linewidth=1
-                                )
-                                self.axes[0].plot(
-                                    [self.last_candle_time, self.last_candle_time + timedelta(seconds=self.current_timeframe)],
-                                    [current_close, current_close],
-                                    'b-'
-                                )
-                            
-                            plt.pause(0.01)
-                
-                time.sleep(0.05)  # Prevent high CPU usage
-        except Exception as e:
-            print(f"Error in plotting thread: {e}")
-        finally:
-            if self.fig:
-                plt.close(self.fig)
