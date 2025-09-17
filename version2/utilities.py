@@ -1,4 +1,6 @@
+import time
 import logging
+from typing import Optional
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -42,7 +44,7 @@ def get_timestamps(start_str: str = None, end_str: str = None) -> tuple:
         return None, None
 
 
-def get_expiration(timestamp:int, expiry:int=1):
+def get_expiry_timestamp(timestamp:int, expiry:int=1):
     """
     Calculate expiration timestamp based on a given timestamp and expiry duration.
     
@@ -59,7 +61,7 @@ def get_expiration(timestamp:int, expiry:int=1):
         - Input timestamp is expected in milliseconds but output is in seconds.
     
     Example:
-        >>> get_expiration(1693843200000, 5)  # 5-minute expiry
+        >>> get_expiry_timestamp(1693843200000, 5)  # 5-minute expiry
         1693843500.0
     """
 
@@ -107,12 +109,38 @@ def get_remaining_secs(timestamp, duration):
         300.0 or 304.0 as seconds
     
     Note:
-        This function relies on get_expiration() to calculate the actual
+        This function relies on get_expiry_timestamp() to calculate the actual
         expiration timestamp, which includes logic for minimum time requirements.
     """
 
     # Get the expiration timestamp
-    expiry_ts = get_expiration(timestamp, duration)
+    expiry_ts = get_expiry_timestamp(timestamp, duration)
 
     # Calculate remaining seconds by subtracting current time from expiration time
     return expiry_ts - int(timestamp/1000)
+
+
+def generate_request_id(request_id: Optional[str] = None) -> str:
+    """
+    Generate a unique request ID for API calls.
+    
+    Args:
+        request_id: Optional pre-existing request ID. If None, a new one will be generated.
+        
+    Returns:
+        str: The request ID to use for the API call.
+        
+    Example:
+        >>> generate_request_id()
+        '456123'  # Random microseconds-based ID
+        >>> generate_request_id("custom_id")
+        'custom_id'
+    """
+    # If request_id is provided, return it unchanged
+    if request_id is not None:
+        return request_id
+    
+    # Generate unique ID from current timestamp microseconds
+    microsecond_part = str(time.time()).split('.')[1]
+    
+    return microsecond_part

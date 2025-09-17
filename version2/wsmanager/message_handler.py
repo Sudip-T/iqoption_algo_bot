@@ -1,6 +1,5 @@
 import json
 import logging
-
 logger = logging.getLogger(__name__)
 
 
@@ -28,11 +27,10 @@ class MessageHandler:
 
         # Position tracking
         self.hisory_positions = None
-        self.open_positions = {
-            'digital_options':{},
-            'binary_options':{}
-        }
+
         self.position_info = {}
+        self.orders_confirmation = {}
+
         
     def handle_message(self, message):
         """
@@ -53,9 +51,9 @@ class MessageHandler:
             'initialization-data': self._handle_initialization_data,
             'training-balance-reset': self._handle_training_balance_reset,
             "history-positions":self._handle_position_history,
-            "digital-option-placed":self._handle_digital_option_placed,
-
+            "digital-option-placed":self._handle_option_opened,
             "position-changed":self._handle_position_changed,
+            "option":self._handle_option_opened,
         }
 
         # Get the appropriate handler and invoke it if found
@@ -190,7 +188,7 @@ class MessageHandler:
         """
         self.hisory_positions = message['msg']['positions']
 
-    def _handle_digital_option_placed(self, message):
+    def _handle_option_opened(self, message):
         """
         Handle digital option placement confirmation messages.
         
@@ -201,9 +199,11 @@ class MessageHandler:
             message (dict): Placement confirmation containing either option ID or error message
         """
         if message["msg"].get("id") != None: # Successful placement - store the option ID
-            self.open_positions['digital_options'][message["request_id"]] = message["msg"].get("id")
+            self.orders_confirmation[message["request_id"]] = message["msg"].get("id")
         else: # Failed placement - store the error message
-            self.open_positions['digital_options'][message["request_id"]] = message["msg"].get("message")
+            self.orders_confirmation[message["request_id"]] = message["msg"].get("message")
+
+        self._save_data(message['msg'], 'positions_opened')
 
     def _handle_position_changed(self, message):
         """

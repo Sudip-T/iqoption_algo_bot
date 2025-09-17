@@ -15,7 +15,7 @@ Author: Sudip Thapa (TG - Code2AutomatewithSudip)
 import time
 import logging
 from datetime import datetime, timedelta
-from version2.iqclient import IQOptionAlgoAPI
+from version2.iqclient import *
 
 # Configure logging for better output visibility
 logging.basicConfig(
@@ -82,13 +82,26 @@ def main():
     #     print(f"❌ Market data error: {e}")
 
 
-    print("\n💰 Place Digital Options Trade and Check the Outcome")
+    # print("\n💰 Place Digital Options Trade and Check the Outcome")
+    # print("-" * 55)
+
+    # status, result = aibot.execute_digital_option_trade('EURUSD-OTC', 1, 'CALL', 1)
+    # if status:
+    #     result = aibot.get_trade_outcome(result, 1)
+
+    print("\n💰 Place Binary Options Trade and Check the Outcome")
     print("-" * 55)
 
-    status, result = aibot.execute_digital_option_trade('EURUSD-OTC', 1, 'CALL', 1)
-    if status:
-        result = aibot.get_trade_outcome(result, 1)
+    status, result = aibot.execute_options_trade(OptionsTradeParams(
+                        asset="EURUSD-op",
+                        amount=100,
+                        direction=Direction.CALL,
+                        option_type=OptionType.DIGITAL_OPTION,
+                        expiry=1,
+                    ))
 
+    if status:
+        is_closed, data = aibot.trade_manager.get_trade_outcome(result, 1)
 
 def print_footer():
     """Display footer information"""

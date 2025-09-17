@@ -2,7 +2,7 @@ import time
 import logging
 from datetime import datetime, UTC
 from options_assests import UNDERLYING_ASSESTS
-from version2.utilities import get_expiration, get_remaining_secs
+from version2.utilities import get_expiry_timestamp, get_remaining_secs
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class TradeManager:
             return UNDERLYING_ASSESTS[asset_name]
         raise KeyError(f'{asset_name} not found!')
 
-    def _execute_digital_option_trade(self, asset:str, amount:float, direction:str, expiry:int=1):
+    def _place_digital_option_trade(self, asset:str, amount:float, direction:str, expiry:int=1):
         """
         Execute a digital option trade with validation and error handling.
         
@@ -70,15 +70,11 @@ class TradeManager:
             direction_map = {'put': 'P', 'call': 'C'}        
             direction = direction_map[direction]
 
-            # Generate unique request ID for tracking
-            from random import randint
-            request_id = str(randint(0, 100000))
-
             # Build message and send trade request
-            msg = self._build_options_body(asset, amount, expiry, direction)
-            self.ws_manager.send_message("sendMessage", msg, request_id)
+            msg = self.prepare_digital_trade_payload(asset, amount, expiry, direction)
+            request_id = self.ws_manager.send_message("sendMessage", msg)
 
-            return self.wait_for_oreder_confirmation(request_id, expiry)
+            return self.wait_for_order_confirmation(request_id, expiry)
             
         except (InvalidTradeParametersError, TradeExecutionError, KeyError) as e:
                     logger.error(f"Trade execution failed: {e}")
@@ -86,7 +82,7 @@ class TradeManager:
             # Catch any unexpected errors
             logger.error(f"Unexpected error during trade execution: {e}", exc_info=True)
 
-    def wait_for_oreder_confirmation(self, request_id:int, expiry:int, timeout:int=10):
+    def wait_for_order_confirmation(self, request_id:int, expiry:int, timeout:int=10):
         """
         Wait for trade order confirmation from the server.
         
@@ -101,7 +97,7 @@ class TradeManager:
         
         # Poll for order confirmation within timeout
         while time.time() - start_time < timeout:
-            result = self.message_handler.open_positions['digital_options'].get(request_id)
+            result = self.message_handler.orders_confirmation.get(request_id)
             if result is not None:
                 if isinstance(result, int):
                     # Success: result is order ID
@@ -117,7 +113,7 @@ class TradeManager:
         logger.error(f"Order Confirmation timed out after {timeout} seconds")
 
 
-    def _build_options_body(self, asset: str, amount: float, 
+    def prepare_digital_trade_payload(self, asset: str, amount: float, 
                            expiry: int, direction: str) -> str:
         """
         Build WebSocket message body for digital options trade.
@@ -134,7 +130,7 @@ class TradeManager:
 
         # Get asset ID and calculate expiration timestamp
         active_id = str(self.get_asset_id(asset))
-        expiration = get_expiration(self.message_handler.server_time, expiry)
+        expiration = get_expiry_timestamp(self.message_handler.server_time, expiry)
         date_formatted = datetime.fromtimestamp(expiration, UTC).strftime("%Y%m%d%H%M")
 
         # Build instrument ID following IQOption format
@@ -183,7 +179,6 @@ class TradeManager:
         if not self.account_manager.current_account_id:
             raise TradeExecutionError("No active account available")
             
-
     def get_trade_outcome(self, order_id: int, expiry:int=1):
         """
         Monitor trade and return outcome when closed.
@@ -214,3 +209,34 @@ class TradeManager:
 
         # Trade did not close within expected timeframe
         return False, None
+
+
+    def _place_binary_options_trade(self, asset:str, amount:float, direction:str, expiry:int=1):
+        """Place a binary/turbo option trade."""
+        try:
+            expiration = get_expiry_timestamp(self.message_handler.server_time, expiry)
+
+            if expiry < 5:
+                option_type_id = 3 # turbo (exp > 5mins )
+            else:
+                option_type_id = 1 # binary ( exp > 5 mins )
+
+            msg = {
+                    "body":{
+                            "price": int(amount),
+                            "active_id": int(self.get_asset_id(asset)),
+                            "expired": int(expiration),
+                            "direction": direction.lower(),
+                            "option_type_id": option_type_id,
+                            "user_balance_id": int(self.account_manager.current_account_id)
+                        },
+                    "name": "binary-options.open-option",
+                    "version": "1.0"
+                    }
+            
+            request_id = self.ws_manager.send_message("sendMessage", msg)
+            return self.wait_for_order_confirmation(request_id, expiry)
+            
+        except Exception as e:
+            logger.error(f"Binary trade failed: {e}")
+            return False, str(e)

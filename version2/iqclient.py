@@ -3,7 +3,8 @@ import time
 import logging
 import requests
 from version2.settings import *
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
+from version2.models import *
 
 from version2.trade import TradeManager
 from version2.markets import MarketManager
@@ -247,23 +248,40 @@ class IQOptionAlgoAPI:
         self._ensure_connected()
         return self.account_manager.get_position_history_by_page(instrument_type, limit=limit, offset=offset)
     
-    def execute_digital_option_trade(self,asset: str,amount: int,direction: str,
-                                    expiry: Optional[int] = 1):
+
+    def execute_options_trade(self, trade_params: OptionsTradeParams) -> Dict[str, Any]:
         """
-        Execute a digital options trade.
+        Execute an options trade (digital or binary).
         
         Args:
-            asset (str): Asset symbol to trade
-            amount (int): Trade amount
-            direction (str): Trade direction ('call' or 'put')
-            expiry (int, optional): Expiry time in minutes. Defaults to 1
-            
+            trade_params (TradeParams): Trade parameters object containing all trade details
+                
         Returns:
             dict: Trade execution result with order ID
+            
+        Example:
+            params = TradeParams(asset="EURUSD", amount=100, direction=Direction.CALL, 
+                               expiry=5, option_type=OptionType.BINARY)
+            result = execute_option_trade(params)
         """
         self._ensure_connected()
-        return self.trade_manager._execute_digital_option_trade(asset, amount, direction, expiry=expiry)
-    
+        
+        # Route to appropriate trade manager method based on option type
+        if trade_params.option_type == OptionType.DIGITAL_OPTION:
+            return self.trade_manager._place_digital_option_trade(
+                trade_params.asset, 
+                trade_params.amount, 
+                trade_params.direction.value, 
+                expiry=trade_params.expiry
+            )
+        elif trade_params.option_type == OptionType.BINARY_OPTION:
+            return self.trade_manager._place_binary_options_trade(
+                trade_params.asset, 
+                trade_params.amount, 
+                trade_params.direction.value, 
+                expiry=trade_params.expiry
+            )
+        
     def get_trade_outcome(self, order_id: int ,expiry:int):
         """
         Get the outcome of a completed trade.

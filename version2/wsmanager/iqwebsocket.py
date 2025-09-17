@@ -27,6 +27,7 @@ class WebSocketManager:
         self.websocket = None
         self.ws_is_active = False
         self.message_handler = message_handler
+        self.send_message_count = 0
         
     def start_websocket(self):
         """
@@ -55,7 +56,7 @@ class WebSocketManager:
         while not self.ws_is_active:
             time.sleep(0.1)
     
-    def send_message(self, name, msg, request_id=""):
+    def send_message(self, name, msg, request_id=None):
         """
         Send a message through the WebSocket connection.
         
@@ -73,9 +74,11 @@ class WebSocketManager:
         """
 
         # Generate request ID from timestamp microseconds if not provided
-        if request_id == '':
-            request_id = int(str(time.time()).split('.')[1])
-        
+        if request_id is None:
+            request_id = str(time.time()).split('.')[1]
+
+        self.send_message_count += 1
+
         # Construct message data structure
         data = json.dumps(dict(name=name, msg=msg, request_id=request_id))
         
