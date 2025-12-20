@@ -94,14 +94,14 @@ def main():
 
     status, result = aibot.execute_options_trade(OptionsTradeParams(
                         asset="EURUSD-op",
-                        amount=100,
+                        amount=1,
                         direction=Direction.CALL,
                         option_type=OptionType.DIGITAL_OPTION,
                         expiry=1,
                     ))
 
     if status:
-        is_closed, data = aibot.trade_manager.get_trade_outcome(result, 1)
+        is_closed, data = aibot.get_trade_outcome(result, 1)
 
 def print_footer():
     """Display footer information"""

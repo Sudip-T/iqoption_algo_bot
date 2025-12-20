@@ -3,6 +3,7 @@ import pandas as pd
 import mplfinance as mpf
 from enum import Enum
 import logging
+from typing import List, Dict
 from options_assests import UNDERLYING_ASSESTS
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ class MarketManager:
                 "size": timeframe,
                 "count": count,
                 "to": self.message_handler.server_time,
-                "only_closed": True,
+                "only_closed": False,
                 "split_normalization": True
             }
         }
@@ -76,7 +77,7 @@ class MarketManager:
         # Wait for response
         while self.message_handler.candles is None:
             time.sleep(0.1)
-        
+
         return self.message_handler.candles
     
     def plot_candles(self, candles_data=None):
@@ -315,3 +316,16 @@ class MarketManager:
                 }
             }
         })
+
+    def _convert_to_dataframe(self, candles_data: List[Dict]) -> pd.DataFrame:
+        """Convert candle data to pandas DataFrame."""
+        if not candles_data:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(candles_data)
+        # df['datetime'] = pd.to_datetime(df['from'], unit='s')
+        # df = df[['datetime', 'open', 'close', 'min', 'max', 'volume']]
+        # df.rename(columns={'min': 'low', 'max': 'high'}, inplace=True)
+        # # df.set_index('datetime', inplace=True)
+        # df.to_csv('candles.csv')
+        return df

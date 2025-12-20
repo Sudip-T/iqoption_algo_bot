@@ -2,6 +2,8 @@ import json
 import logging
 logger = logging.getLogger(__name__)
 
+from version2.models import TradeOutcomeChecker
+
 
 class MessageHandler:
     """
@@ -31,6 +33,7 @@ class MessageHandler:
         self.position_info = {}
         self.orders_confirmation = {}
 
+        self.trade_outcome_checker = TradeOutcomeChecker()
         
     def handle_message(self, message):
         """
@@ -54,6 +57,8 @@ class MessageHandler:
             "digital-option-placed":self._handle_option_opened,
             "position-changed":self._handle_position_changed,
             "option":self._handle_option_opened,
+
+            "socket-option-closed":self._handle_socket_option_closed,
         }
 
         # Get the appropriate handler and invoke it if found
@@ -161,23 +166,6 @@ class MessageHandler:
         """
         with open(f'{filename}.json', 'w') as file:
             json.dump(message, file, indent=4)
-
-
-
-    # def _handle_candles_generated(self, message):
-    #     """
-    #     Handle real-time tick/candle generation messages.
-    #     
-    #     This method is commented out but would handle real-time price updates
-    #     with thread-safe tick data storage and timestamp management.
-    #     """
-    #     with self.tick_lock:
-    #         # Store the raw tick data
-    #         self.latest_tick = message.get('msg', {})
-    #         # Add current timestamp if not present
-    #         if 'at' not in self.latest_tick:
-    #             self.latest_tick['at'] = int(time.time() * 1e9)
-
         
     def _handle_position_history(self, message):
         """
@@ -215,8 +203,40 @@ class MessageHandler:
         Args:
             message (dict): Position change message containing updated position status
         """
-        
-        self.position_info[int(message["msg"]["raw_event"]["order_ids"][0])] = message['msg']
+
+        if message['msg']['status'] == 'closed':
+            self.position_info[int(message["msg"]["raw_event"]["order_ids"][0])] = \
+            self.trade_outcome_checker.check_trade_outcome(message['msg'])
 
         # Save position data to file for debugging/logging purposes
-        self._save_data(message['msg'], 'positions')
+        # self._save_data(message['msg'], 'positions')
+
+    def _handle_socket_option_closed(self, message):
+        """
+        Handle position status change messages.
+        
+        Updates position information and saves the latest position data to file.
+        Uses the first order ID from the raw event as the key for tracking.
+        
+        Args:
+            message (dict): Position change message containing updated position status
+        """
+
+        self.position_info[int(message["msg"]["id"])] = \
+            self.trade_outcome_checker.check_trade_outcome(message['msg'])
+
+
+
+    # def _handle_candles_generated(self, message):
+    #     """
+    #     Handle real-time tick/candle generation messages.
+    #     
+    #     This method is commented out but would handle real-time price updates
+    #     with thread-safe tick data storage and timestamp management.
+    #     """
+    #     with self.tick_lock:
+    #         # Store the raw tick data
+    #         self.latest_tick = message.get('msg', {})
+    #         # Add current timestamp if not present
+    #         if 'at' not in self.latest_tick:
+    #             self.latest_tick['at'] = int(time.time() * 1e9)

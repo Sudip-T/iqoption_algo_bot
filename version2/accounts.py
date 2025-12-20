@@ -202,8 +202,10 @@ class AccountManager:
         # Verify switch was successful and update current account type
         if self.current_account_id == target_account_id:
             self.current_account_type = account_type.lower()
-            logger.info(f'Successfully switched to {account_type.capitalize()} Account (ID: {target_account_id}, Balance: {self.get_active_account_balance()})')
+            logger.info(f'Successfully switched to {account_type.capitalize()} Account'
+                        f'(ID: {target_account_id}, Balance: {self.get_active_account_balance()})')
             return True
+
     
     def _set_portfolio_subscription(self, account_id:int)-> None:
         """

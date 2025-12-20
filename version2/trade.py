@@ -178,39 +178,7 @@ class TradeManager:
         # Ensure active account is available
         if not self.account_manager.current_account_id:
             raise TradeExecutionError("No active account available")
-            
-    def get_trade_outcome(self, order_id: int, expiry:int=1):
-        """
-        Monitor trade and return outcome when closed.
         
-        Args:
-            order_id: Order ID to monitor
-            expiry: Original expiry time in minutes for timeout calculation
-            
-        Returns:
-            tuple: (success: bool, pnl: float or None)
-                success=True with PnL if trade closed, False if timeout
-        """
-        start_time = time.time()
-        timeout = get_remaining_secs(self.message_handler.server_time, expiry)
-
-        # Poll for trade closure with timeout + 3-second buffer
-        while time.time() - start_time < timeout + 3:
-            order_data = self.message_handler.position_info.get(order_id, {})
-
-            # Check if trade is closed
-            if order_data and order_data.get("status") == "closed":
-                pnl = order_data.get('pnl', 0)
-                result_type = "WIN" if pnl > 0 else "LOSS"
-                logger.info(f"Trade closed - Order IDs: {order_id}, Result: {result_type}, PnL: ${pnl:.2f}")
-                return True, pnl
-            
-            time.sleep(.5) # Check every 500ms
-
-        # Trade did not close within expected timeframe
-        return False, None
-
-
     def _place_binary_options_trade(self, asset:str, amount:float, direction:str, expiry:int=1):
         """Place a binary/turbo option trade."""
         try:
@@ -240,3 +208,33 @@ class TradeManager:
         except Exception as e:
             logger.error(f"Binary trade failed: {e}")
             return False, str(e)
+
+    def get_trade_outcome(self, order_id: int, expiry:int=1):
+        """
+        Monitor trade and return outcome when closed.
+        
+        Args:
+            order_id: Order ID to monitor
+            expiry: Original expiry time in minutes for timeout calculation
+            
+        Returns:
+            tuple: (success: bool, pnl: float or None)
+                success=True with PnL if trade closed, False if timeout
+        """
+        start_time = time.time()
+        timeout = get_remaining_secs(self.message_handler.server_time, expiry)
+
+        # Poll for trade closure with timeout + 3-second buffer
+        while time.time() - start_time < timeout + 3:
+            order_data = self.message_handler.position_info.get(order_id, {})
+
+            # Check if trade is closed
+            if order_data:
+                order_data = order_data.to_dict()
+                logger.info(f"Trade closed - Order IDs: {order_id}, Result: {order_data['result']}, PnL: ${order_data['pl_amount']:.2f}")
+                return True, order_data
+            
+            time.sleep(.5) # Check every 500ms
+
+        # Trade did not close within expected timeframe
+        return False, None
