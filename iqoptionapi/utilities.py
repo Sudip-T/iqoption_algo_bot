@@ -2,6 +2,7 @@ import time
 import logging
 from typing import Optional
 from datetime import datetime, timedelta
+from iqoptionapi.instruments.options_assests import UNDERLYING_ASSESTS
 
 logger = logging.getLogger(__name__)
 
@@ -144,3 +145,9 @@ def generate_request_id(request_id: Optional[str] = None) -> str:
     microsecond_part = str(time.time()).split('.')[1]
     
     return microsecond_part
+
+
+def get_asset_id(asset_name: str) -> int:
+    if asset_name in UNDERLYING_ASSESTS:
+        return UNDERLYING_ASSESTS[asset_name]
+    raise KeyError(f"Asset '{asset_name}' not found in underlying assets")

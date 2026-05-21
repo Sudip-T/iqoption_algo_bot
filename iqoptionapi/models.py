@@ -3,7 +3,14 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-
+class InstrumentType(Enum):
+    """Trading instrument types supported by IQOption API."""
+    FOREX = 'forex'
+    CFD = 'cfd'
+    CRYPTO = 'crypto'
+    DIGITAL_OPTION = 'digital-option'
+    BINARY_OPTION = 'binary-option'
+    
 class OptionType(Enum):
     DIGITAL_OPTION = "digital-option"
     BINARY_OPTION = "binary-option"
@@ -12,6 +19,7 @@ class OptionType(Enum):
 class Direction(Enum):
     PUT = "put"
     CALL = "call"
+    INDECISION = 'none'
 
 @dataclass
 class OptionsTradeParams:

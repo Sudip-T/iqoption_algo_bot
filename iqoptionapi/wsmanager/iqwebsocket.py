@@ -3,10 +3,8 @@ import time
 import logging
 import websocket
 import threading
-from version2.settings import WS_URL
 
 logger = logging.getLogger(__name__)
-
 
 class WebSocketManager:
     """
@@ -23,7 +21,6 @@ class WebSocketManager:
         Args:
             message_handler: Handler instance that processes incoming messages
         """
-        self.ws_url = WS_URL
         self.websocket = None
         self.ws_is_active = False
         self.message_handler = message_handler
@@ -40,7 +37,7 @@ class WebSocketManager:
 
         # Create WebSocket application with event handlers
         self.websocket = websocket.WebSocketApp(
-            self.ws_url,
+            'wss://ws.iqoption.com/echo/websocket',
             on_message=self._on_message,  # Handle incoming messages
             on_open=self._on_open,        # Handle connection opened
             on_close=self._on_close,      # Handle connection closed
@@ -53,7 +50,13 @@ class WebSocketManager:
         wst.start()
         
         # Wait for connection to be established before proceeding
+        timeout = 10
+        start = time.time()
+
         while not self.ws_is_active:
+            if time.time() - start > timeout:
+                raise TimeoutError("WebSocket connection timeout")
+
             time.sleep(0.1)
     
     def send_message(self, name, msg, request_id=None):
@@ -85,64 +88,40 @@ class WebSocketManager:
         self.websocket.send(data)
         return request_id
     
-    def _on_message(self, ws, message):
+    def _on_message(self, ws, message, *args):
         """
         Handle incoming WebSocket messages.
-        
-        Parses JSON messages and forwards them to the message handler.
-        Sets the connection as active upon receiving the first valid message.
-        
-        Args:
-            ws: WebSocket instance (unused but required by websocket-client)
-            message (str): Raw message data received from WebSocket
         """
-        # print(message, '\n')
         try:
-            message = json.loads(message) # Parse JSON message
-            self.message_handler.handle_message(message) # Forward to message handler for processing
-            self.ws_is_active = True # Mark connection as active after successful message processing
+            # print(message)
+            message = json.loads(message)
+            self.message_handler.handle_message(message)
+            self.ws_is_active = True
         except json.JSONDecodeError as e:
             print(f"Error parsing message: {e}")
-    
-    def _on_error(self, ws, error):
+
+
+    def _on_error(self, ws, error, *args):
         """
         Handle WebSocket connection errors.
-        
-        Args:
-            ws: WebSocket instance (unused but required by websocket-client)
-            error: Error information from the WebSocket connection
         """
         print(f"### WebSocket Error: {error} ###")
-        # Note: Could add more sophisticated error handling here such as:
-        # - Logging with proper log levels
-        # - Reconnection logic
-        # - Error categorization and specific responses
-    
-    def _on_open(self, ws):
+
+
+    def _on_open(self, ws, *args):
         """
         Handle WebSocket connection opened event.
-        
-        Called when the WebSocket connection is successfully established.
-        
-        Args:
-            ws: WebSocket instance (unused but required by websocket-client)
         """
         # print("### WebSocket opened ###")
-        pass
-    
-    def _on_close(self, ws, close_status_code, close_msg):
+        self.ws_is_active = True
+
+
+    def _on_close(self, ws, close_status_code=None, close_msg=None, *args):
         """
         Handle WebSocket connection closed event.
-        
-        Called when the WebSocket connection is closed, either intentionally
-        or due to network issues.
-        
-        Args:
-            ws: WebSocket instance (unused but required by websocket-client)
-            close_status_code: WebSocket close status code
-            close_msg: Close message/reason
         """
-        print("### WebSocket closed ###")
+        # print("### WebSocket closed ###")
+        self.ws_is_active = False
     
     def close(self):
         """

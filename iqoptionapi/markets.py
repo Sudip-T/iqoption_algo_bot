@@ -1,21 +1,13 @@
 import time
+import logging
 import pandas as pd
 import mplfinance as mpf
-from enum import Enum
-import logging
 from typing import List, Dict
-from options_assests import UNDERLYING_ASSESTS
+from iqoptionapi.utilities import get_asset_id
+from iqoptionapi.iqapi import InstrumentType
 
 logger = logging.getLogger(__name__)
 
-
-class InstrumentType(Enum):
-    """Trading instrument types supported by IQOption API."""
-    FOREX = 'forex'
-    CFD = 'cfd'
-    CRYPTO = 'crypto'
-    DIGITAL_OPTION = 'digital-option'
-    BINARY_OPTION = 'binary-option'
 
 class MarketManager:
     """
@@ -27,23 +19,6 @@ class MarketManager:
     def __init__(self, websocket_manager, message_handler):
         self.ws_manager = websocket_manager
         self.message_handler = message_handler
-    
-    def get_asset_id(self, asset_name: str) -> int:
-        """
-        Get numeric asset ID for trading asset name.
-        
-        Args:
-            asset_name: Trading asset name (e.g., 'EURUSD-op', 'EURUSD-OTC')
-            
-        Returns:
-            Asset ID for API calls
-            
-        Raises:
-            KeyError: If asset not found
-        """
-        if asset_name in UNDERLYING_ASSESTS:
-            return UNDERLYING_ASSESTS[asset_name]
-        raise KeyError(f'{asset_name} not found!')
     
     def get_candle_history(self, asset_name: str, count: int = 50, timeframe: int = 60):
         """
@@ -63,11 +38,11 @@ class MarketManager:
             "name": "get-candles",
             "version": "2.0",
             "body": {
-                "active_id": self.get_asset_id(asset_name),
+                "active_id": get_asset_id(asset_name),
                 "size": timeframe,
                 "count": count,
                 "to": self.message_handler.server_time,
-                "only_closed": False,
+                "only_closed": True,
                 "split_normalization": True
             }
         }
@@ -311,7 +286,7 @@ class MarketManager:
             'name': 'candle-generated',
             'params': {
                 'routingFilters': {
-                    'active_id': self.get_asset_id(asset_name),
+                    'active_id': get_asset_id(asset_name),
                     'size': timeframe
                 }
             }

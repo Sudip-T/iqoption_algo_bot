@@ -1,15 +1,13 @@
-import sys
 import time
 import json
 import logging
 from datetime import datetime
-from version2.settings import *
 from dataclasses import dataclass
 from typing import Optional, List
 from typing import List, Dict, Any
-from version2.utilities import get_timestamps
-
-logger = logging.getLogger(__name__)
+from iqoptionapi.utilities import get_timestamps
+from iqoptionapi.state import appstate
+logger = logging.getLogger("api:account")
 
 
 @dataclass
@@ -42,40 +40,10 @@ class AccountManager:
     """
 
     def __init__(self, websocket_manager, message_handler):
-        self.available_accounts = {}
-        self.current_account_id = None
         self.ws_manager = websocket_manager
         self.message_handler = message_handler
-        self.current_account_type = self._validate_account_type(DEFAULT_ACCOUNT_TYPE.lower(), exit=True)
-    
-    def set_default_account(self) -> None:
-        """
-        Set up the default trading account based on settings.DEFAULT_ACCOUNT_TYPE
-        and subscribes to portfolio position changes for the active account.
-        
-        Note:
-            Requires self.message_handler.profile_msg to be populated with account data.
-        """
-        if self.message_handler.profile_msg:
-            # Extract balances/accounts information from profile message
-            balances = self.message_handler.profile_msg['msg']['balances']
-            for balance in balances:
-                if balance['type'] == 4:  # Demo account
-                    self.available_accounts['demo'] = balance
-                elif balance['type'] == 1:  # Real account
-                    self.available_accounts['real'] = balance
 
-            # Set current account ID based on the configured account type
-            self.current_account_id = self.available_accounts[self.current_account_type]['id']
-
-            logger.info(f'Currently Active Account - {self.current_account_type.capitalize()}, '
-            f'Balance: {self.available_accounts[self.current_account_type]['amount']:.2f}'
-            )
-
-            # Subscribe to portfolio position changes for tracking trades
-            self._portfolio_position_change('subscribeMessage', self.current_account_id)
-
-    def get_account_balances(self) -> List:
+    def get_balances(self) -> List:
         """
         Fetch all account balances including regular and tournament accounts.
         
@@ -87,7 +55,7 @@ class AccountManager:
         """
 
         # Reset previous balance data
-        self.message_handler.balance_data = None
+        appstate.balance_data = None
 
         # Prepare message payload to request balance data
         # types_ids: 1=real, 4=demo, 2=tournament, 6=other
@@ -104,10 +72,10 @@ class AccountManager:
         self.ws_manager.send_message("sendMessage", msg)
         
         # Wait for response with polling
-        while self.message_handler.balance_data is None:
+        while appstate.balance_data is None:
             time.sleep(0.1)
         
-        return self.message_handler.balance_data
+        return appstate.balance_data
     
     def get_tournament_accounts(self) -> List[TournamentAccount]:
         """
@@ -118,10 +86,10 @@ class AccountManager:
                                    id, name, and balance information.
         """
         # First, Fetch all accounts/balances 
-        self.get_account_balances()
+        self.get_balances()
 
         # Wait for balance data to be populated
-        while self.message_handler.balance_data is None:
+        while appstate.balance_data is None:
             time.sleep(0.1)
 
         # Filter and create TournamentAccount objects for tournament accounts
@@ -131,81 +99,60 @@ class AccountManager:
                 name=item['tournament_name'],
                 balance=item['amount']
             )
-            for item in self.message_handler.balance_data
-            if item['type'] == ACCOUNT_TOURNAMENT
+            for item in appstate.balance_data
+            if item['type'] == 2
         ]
     
-    def get_active_account_balance(self) -> Optional[float]:
+    def get_balance(self) -> Optional[float]:
         """
         Get the balance of the currently active account.
         
         Returns:
             Optional[float]: Current account balance, or None if account not found.
         """
-
-        # Fetch all account balances
-        accounts = self.get_account_balances()
         
         # Find and return balance for the current account
-        for account in accounts:
-            if account['id'] == self.current_account_id:
+        for account in self.get_balances():
+            if account['id'] == appstate.balance_id:
                 return account['amount']
-            
-    def _validate_account_type(self, account_type:str, exit=False) -> str:
-        """
-        Validate that the account type is valid.
-        
-        Args:
-            account_type (str): Account type to validate ('real' or 'demo').
-            exit (bool): Whether to exit the program on invalid type.
-            
-        Returns:
-            str: Lowercase account type if valid, None if invalid.
-        """
-
-        if account_type.lower() not in ['real', 'demo']:
-            logger.error(f"{account_type} is Invalid Account Type! Needs to one of ['real', 'demo']")
-            if exit:
-                sys.exit()
-            return
-        return account_type.lower()
     
-    def switch_account(self, account_type: str) -> None:
+    def switch_account(self, account_type: str) -> bool:
         """
         Switch between real and demo accounts.
         
-        Changes the active account type and updates portfolio subscriptions
-        to receive position updates for the new account.
-        
         Args:
             account_type (str): Target account type ('real' or 'demo').
+            
+        Returns:
+            bool: True if switch successful
+            
+        Raises:
+            ValueError: If account type is invalid
+            LookupError: If target account not found in balance list
         """
+        # Validates and sets appstate.balance_type + appstate.balance_type_str
+        appstate.validate_account_type(account_type)
 
-        # Validate the requested account type
-        if not self._validate_account_type(account_type):
-            return
-        
-        # Get current account balances
-        accounts = self.get_account_balances()
+        balances = self.get_balances()
+        if not balances:
+            raise LookupError("No balances returned from server")
 
-        # Find the target account ID based on account type
-        target_account_id = None
-        for account in accounts:
-            if ((account_type.lower() == 'real' and account['type'] == 1) or 
-                (account_type.lower() == 'demo' and account['type'] == 4)):
-                target_account_id = account['id']
-                break
+        target_account_id = next(
+            (account['id'] for account in balances
+            if account['type'] == appstate.balance_type),
+            None
+        )
 
-        # Update portfolio subscription to new account
+        if target_account_id is None:
+            raise LookupError(
+                f"No account found for type '{account_type}' "
+                f"(balance_type={appstate.balance_type}). "
+                f"Available types: {[a['type'] for a in balances]}"
+            )
+
         self._set_portfolio_subscription(target_account_id)
-
-        # Verify switch was successful and update current account type
-        if self.current_account_id == target_account_id:
-            self.current_account_type = account_type.lower()
-            logger.info(f'Successfully switched to {account_type.capitalize()} Account'
-                        f'(ID: {target_account_id}, Balance: {self.get_active_account_balance()})')
-            return True
-
+        logger.info(f"Switched to {account_type} account (ID: {target_account_id})")
+        return True
     
     def _set_portfolio_subscription(self, account_id:int)-> None:
         """
@@ -219,16 +166,16 @@ class AccountManager:
         """
 
         # Unsubscribe from current account if exists
-        if self.current_account_id is not None:
-            self._portfolio_position_change('unsubscribeMessage', self.current_account_id)
+        if appstate.balance_id is not None:
+            self._portfolio_position_change('unsubscribeMessage')
         
         # Update current account ID
-        self.current_account_id = account_id
+        appstate.update(balance_id=account_id)
 
         # Subscribe to new account's position changes
-        self._portfolio_position_change('subscribeMessage', self.current_account_id)
+        self._portfolio_position_change('subscribeMessage')
     
-    def _portfolio_position_change(self, msg_name:str, account_id:int) -> None:
+    def _portfolio_position_change(self, msg_name:str) -> None:
         """
         Subscribe or unsubscribe to portfolio position changes for an account.
         
@@ -248,7 +195,7 @@ class AccountManager:
                 "params": {
                     "routingFilters": {
                         "instrument_type": str(instrument),
-                        "user_balance_id": account_id
+                        "user_balance_id": appstate.balance_id
                     }
                 }
             }
@@ -268,7 +215,7 @@ class AccountManager:
             'version': '4.0',
             'body': {
                 'amount': amount,
-                'user_balance_id': self.message_handler.profile_msg['msg']['balances'][-1]['id']
+                'user_balance_id': appstate.profile_msg['msg']['balances'][-1]['id']
             }
         }
         self.ws_manager.send_message('sendMessage', msg)
@@ -303,7 +250,7 @@ class AccountManager:
             "instrument_types": instrument_type,
             "limit": limit,
             "offset": offset,
-            "user_balance_id": self.current_account_id,
+            "user_balance_id": appstate.balance_id,
             },
             "name": "portfolio.get-history-positions",
             "version": "2.0",
@@ -337,7 +284,7 @@ class AccountManager:
                 "end": end_ts,
                 "instrument_types": instrument_type,
                 "start": start_ts,
-                "user_balance_id": self.current_account_id,
+                "user_balance_id": appstate.balance_id,
             },
             "name": "portfolio.get-history-positions",
             "version": "2.0",
@@ -375,8 +322,6 @@ class AccountManager:
             time.sleep(0.1)
         
         return self.message_handler.hisory_positions
-    
-
 
     # Add this method to your AccountManager class
     def get_filtered_position_history(self, instrument_types: List[str] = ["turbo-option", "binary-option"], 

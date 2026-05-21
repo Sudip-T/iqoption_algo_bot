@@ -1,40 +1,76 @@
 import json
 import logging
 logger = logging.getLogger(__name__)
+from iqoptionapi.state import appstate
+from collections import defaultdict, deque
+from iqoptionapi.models import TradeOutcomeChecker
+from iqoptionapi.candles import CandleSubscriptionManager
 
-from version2.models import TradeOutcomeChecker
+
+def nested_dict(n, type):
+    if n == 1:
+        return defaultdict(type)
+    else:
+        return defaultdict(lambda: nested_dict(n - 1, type))
 
 
 class MessageHandler:
     """
     Handles various types of messages received from IQ Option Websocket.
     """
-    def __init__(self):
+    def __init__(self, candle_manager:CandleSubscriptionManager=None):
         """
         Initialize the MessageHandler with default values for all message types.
         
         Sets up storage for profile data, balance information, market data, and position tracking.
         """
+
+        self.candle_manager = candle_manager
+        
+        # Keep existing non-candle attributes
         self.server_time = None
-
-        # User profile and account information
-        self.profile_msg = None
-        self.balance_data = None
-
-        # Market and time data
-        self.candles = None
         self.underlying_list = None
-        self.initialization_data = None
         self._underlying_assests = None
-
-        # Position tracking
+        self.initialization_data = None
         self.hisory_positions = None
-
         self.position_info = {}
         self.orders_confirmation = {}
-
         self.trade_outcome_checker = TradeOutcomeChecker()
-        
+
+
+        # self.server_time = None
+
+        # # Market and time data
+        # self.candles = None
+        # self.underlying_list = None
+        # self.initialization_data = None
+
+        # self.candle_generated_check = nested_dict(2, dict)
+
+        # # Position tracking
+        # self.hisory_positions = None
+
+        # self.position_info = {}
+        # self.orders_confirmation = {}
+
+        # self.trade_outcome_checker = TradeOutcomeChecker()
+
+        # self.real_time_candles = nested_dict(3, dict)
+        # self.candle_generated_check = nested_dict(2, dict)
+        # self.real_time_candles_maxdict_table = nested_dict(2, dict)
+
+        # self.candles = defaultdict(lambda: defaultdict(lambda: deque(maxlen=10)))
+
+        # # Candle history storage
+        # self._current_candle = None
+        # self._current_id     = None
+        # self.candle_history  = nested_dict(2, lambda: deque(maxlen=9))
+        # self._new_candle_callback = None   # called when a new candle opens
+
+    def set_candle_manager(self, candle_manager):
+        """Inject candle manager after initialization."""
+        self.candle_manager = candle_manager
+
     def handle_message(self, message):
         """
         Route incoming messages to appropriate handler method based on message name.
@@ -49,6 +85,7 @@ class MessageHandler:
             'profile': self._handle_profile,
             'candles': self._handle_candles,
             'balances': self._handle_balances,
+            'balance-changed': self._handle_balance_changed,
             'timeSync': self._handle_server_time,
             'underlying-list': self._handle_underlying_list,
             'initialization-data': self._handle_initialization_data,
@@ -59,6 +96,8 @@ class MessageHandler:
             "option":self._handle_option_opened,
 
             "socket-option-closed":self._handle_socket_option_closed,
+            "candle-generated":self._handle_candles_generated,
+            # "candle-generated": self._on_candle,
         }
 
         # Get the appropriate handler and invoke it if found
@@ -85,15 +124,12 @@ class MessageHandler:
         Args:
             message (dict): Profile message containing user account information and balances
         """
-        self.profile_msg = message
-        balances = message['msg']['balances']
+        appstate.profile_msg = message
+        for balance in message['msg']['balances']:
+            if balance['type'] == appstate.balance_type:
+                appstate.update(balance_id=balance['id'])
+            appstate.account_list['type'] = balance
 
-        # Find demo account balance (type 4) and set as active
-        for balance in balances:
-            if balance['type'] == 4:  # Demo account | 1 for real, 4 for demo
-                self.active_balance_id = balance['id']
-                break
-    
     def _handle_balances(self, message):
         """
         Handle balance update messages.
@@ -101,7 +137,15 @@ class MessageHandler:
         Args:
             message (dict): Message containing current balance information
         """
-        self.balance_data = message['msg']
+        balance = next(
+            (account['amount'] for account in message['msg']
+            if account['type'] == appstate.balance_type),
+            None
+        )
+        appstate.update(balance=balance, balance_data=message['msg'])
+
+    def _handle_balance_changed(self, message):
+        appstate.update(balance=message['msg']['current_balance']['amount'])
     
     def _handle_training_balance_reset(self, message):
         """
@@ -191,7 +235,7 @@ class MessageHandler:
         else: # Failed placement - store the error message
             self.orders_confirmation[message["request_id"]] = message["msg"].get("message")
 
-        self._save_data(message['msg'], 'positions_opened')
+        # self._save_data(message['msg'], 'positions_opened')
 
     def _handle_position_changed(self, message):
         """
@@ -225,18 +269,10 @@ class MessageHandler:
         self.position_info[int(message["msg"]["id"])] = \
             self.trade_outcome_checker.check_trade_outcome(message['msg'])
 
-
-
-    # def _handle_candles_generated(self, message):
-    #     """
-    #     Handle real-time tick/candle generation messages.
-    #     
-    #     This method is commented out but would handle real-time price updates
-    #     with thread-safe tick data storage and timestamp management.
-    #     """
-    #     with self.tick_lock:
-    #         # Store the raw tick data
-    #         self.latest_tick = message.get('msg', {})
-    #         # Add current timestamp if not present
-    #         if 'at' not in self.latest_tick:
-    #             self.latest_tick['at'] = int(time.time() * 1e9)
+    def _handle_candles_generated(self, message: dict):
+        """
+        Handle candle-generated messages.
+        DOES NOTHING except forward to candle manager.
+        """
+        if self.candle_manager:
+            self.candle_manager.on_candle_message(message)
